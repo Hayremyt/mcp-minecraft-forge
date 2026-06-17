@@ -1,12 +1,18 @@
 {
   "name": "@hayrem_/mcp-minecraft-forge",
-  "version": "0.1.1",
-  "description": "MCP server for Forge Minecraft modding documentation",
+  "version": "0.2.0",
+  "description": "MCP server for Forge Minecraft modding documentation with FTS5 search",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
     "mcp-minecraft-forge": "dist/index.js"
   },
+  "files": [
+    "dist",
+    "data/forge-docs.db",
+    "scripts/postinstall.js",
+    "node_modules/fts5-sql-bundle/dist/sql-wasm.wasm"
+  ],
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
@@ -23,12 +29,11 @@
   "engines": { "node": ">=20.0.0" },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "better-sqlite3": "^12.11.1",
     "cheerio": "^1.2.0",
+    "fts5-sql-bundle": "^1.0.2",
     "node-fetch": "^3.3.2"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.10.1",
     "typescript": "^5.7.2"
   }

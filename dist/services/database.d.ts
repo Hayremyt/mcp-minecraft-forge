@@ -18,15 +18,17 @@ export interface Chunk {
     has_code: number;
 }
 export declare class DatabaseService {
+    private SQL;
     private db;
     initialize(): Promise<void>;
+    private save;
     private createTables;
     searchDocs(query: string, category?: string, version?: string): Document[];
-    getVersions(): Promise<string[]>;
-    getVersionStats(): Promise<{
+    getVersions(): string[];
+    getVersionStats(): {
         version: string;
         count: number;
-    }[]>;
+    }[];
     insertDocument(doc: Omit<Document, "id">): void;
     insertChunk(chunk: Chunk): void;
 }
