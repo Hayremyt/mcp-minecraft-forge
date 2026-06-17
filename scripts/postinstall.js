@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import https from 'https';
 import os from 'os';
+import { createRequire } from 'module';
 
 const APP_NAME = 'mcp-minecraft-forge';
 
@@ -18,24 +19,19 @@ function getDefaultDataDir() {
   return path.join(xdgDataHome, APP_NAME);
 }
 
-const dataDir = getDefaultDataDir();
-const dbPath = path.join(dataDir, 'forge-docs.db');
-const repoUrl = 'https://api.github.com/repos/Hayremyt/mcp-minecraft-forge/releases/latest';
-
-console.log('=== MCP Minecraft Forge ===\n');
-
-// Check if database already exists
-if (fs.existsSync(dbPath)) {
-  const size = fs.statSync(dbPath).size;
-  console.log(`Database already exists (${(size / 1024 / 1024).toFixed(1)} MB)`);
-  showConfig();
-  process.exit(0);
+function showConfig() {
+  console.log('\n=== Configuration ===');
+  console.log('Add to your opencode.jsonc:');
+  console.log(JSON.stringify({
+    mcp: {
+      forge: {
+        type: "local",
+        command: ["mcp-minecraft-forge"],
+        enabled: true
+      }
+    }
+  }, null, 2));
 }
-
-console.log('Downloading Forge documentation database...\n');
-
-// Ensure data directory exists
-if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 
 function downloadFile(url, dest) {
   return new Promise((resolve, reject) => {
@@ -65,57 +61,61 @@ function downloadFile(url, dest) {
   });
 }
 
-async function main() {
-  try {
-    // Get latest release info from GitHub API
-    const releaseInfo = await new Promise((resolve, reject) => {
-      https.get(repoUrl, { headers: { 'User-Agent': 'forge-mcp-installer' } }, (res) => {
-        let data = '';
-        res.on('data', chunk => data += chunk);
-        res.on('end', () => {
-          try { resolve(JSON.parse(data)); } catch(e) { reject(e); }
-        });
-      }).on('error', reject);
-    });
+const dataDir = getDefaultDataDir();
+const dbPath = path.join(dataDir, 'forge-docs.db');
 
-    // Find forge-docs.db asset
-    const asset = releaseInfo.assets?.find(a => a.name === 'forge-docs.db');
-    if (!asset) {
-      console.log('Database not found in latest release.');
-      console.log('Run locally: npm run index-docs');
-      return;
-    }
+console.log('=== MCP Minecraft Forge ===\n');
 
-    console.log(`Found database: ${(asset.size / 1024 / 1024).toFixed(1)} MB`);
-    console.log(`From release: ${releaseInfo.tag_name}\n`);
-
-    // Download database
-    await downloadFile(asset.browser_download_url, dbPath);
-
-    const size = fs.statSync(dbPath).size;
-    console.log(`\nDatabase installed: ${(size / 1024 / 1024).toFixed(1)} MB`);
-    
-  } catch (err) {
-    console.error('\nDownload failed:', err.message);
-    console.log('\nTo manually create the database:');
-    console.log('  npm run index-docs');
-  }
-  
+// Check if database already exists and has content
+if (fs.existsSync(dbPath) && fs.statSync(dbPath).size > 1000) {
+  const size = fs.statSync(dbPath).size;
+  console.log(`Database already exists (${(size / 1024 / 1024).toFixed(1)} MB)`);
   showConfig();
+  process.exit(0);
 }
 
-function showConfig() {
-  console.log('\n=== Configuration ===');
-  console.log('Add to your opencode.jsonc:');
-  console.log(JSON.stringify({
-    mcp: {
-      forge: {
-        type: "local",
-        command: ["mcp-minecraft-forge"],
-        enabled: true
-      }
-    }
-  }, null, 2));
+if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
+
+// 1. Try to copy from package
+try {
+  const require = createRequire(import.meta.url);
+  const pkgPath = require.resolve('@hayrem_/mcp-minecraft-forge/package.json');
+  const sourceDb = path.join(path.dirname(pkgPath), 'data', 'forge-docs.db');
+
+  if (fs.existsSync(sourceDb) && fs.statSync(sourceDb).size > 1000) {
+    fs.copyFileSync(sourceDb, dbPath);
+    const size = fs.statSync(dbPath).size;
+    console.log(`Database installed from package (${(size / 1024 / 1024).toFixed(1)} MB)`);
+  }
+} catch {}
+
+// 2. Try to download from GitHub release (might be newer)
+if (fs.existsSync(dbPath)) {
+  console.log('Checking for newer version in GitHub release...');
 }
 
-main();
+try {
+  const apiUrl = 'https://api.github.com/repos/Hayremyt/mcp-minecraft-forge/releases/latest';
+  const releaseInfo = await new Promise((resolve, reject) => {
+    https.get(apiUrl, { headers: { 'User-Agent': 'forge-mcp-installer' } }, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        try { resolve(JSON.parse(data)); } catch(e) { reject(e); }
+      });
+    }).on('error', reject);
+  });
+
+  const asset = releaseInfo.assets?.find((a) => a.name === 'forge-docs.db');
+  if (asset) {
+    console.log(`Found in release: ${(asset.size / 1024 / 1024).toFixed(1)} MB (${releaseInfo.tag_name})`);
+    await downloadFile(asset.browser_download_url, dbPath);
+    console.log(`Database updated (${(fs.statSync(dbPath).size / 1024 / 1024).toFixed(1)} MB)`);
+  } else {
+    console.log('No database in release, using package version.');
+  }
+} catch (err) {
+  console.log('Could not check release, using package version.');
+}
+
+showConfig();

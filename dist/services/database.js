@@ -1,17 +1,43 @@
 import fs from "fs";
 import path from "path";
+import https from "https";
+import os from "os";
 import { createRequire } from "module";
 const require = createRequire(import.meta.url);
 const { initSqlJs } = require("fts5-sql-bundle");
-const DB_PATH = path.resolve(process.cwd(), "data/forge-docs.db");
+const APP_NAME = "mcp-minecraft-forge";
+function getDataDir() {
+    if (process.env.FORGE_MCP_DATA_DIR)
+        return process.env.FORGE_MCP_DATA_DIR;
+    const platform = process.platform;
+    if (platform === "win32") {
+        const appData = process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming");
+        return path.join(appData, APP_NAME);
+    }
+    if (platform === "darwin")
+        return path.join(os.homedir(), "Library", "Application Support", APP_NAME);
+    const xdgDataHome = process.env.XDG_DATA_HOME || path.join(os.homedir(), ".local", "share");
+    return path.join(xdgDataHome, APP_NAME);
+}
+const DATA_DIR = getDataDir();
+const DB_PATH = path.join(DATA_DIR, "forge-docs.db");
 export class DatabaseService {
     SQL = null;
     db = null;
     async initialize() {
-        const dbDir = path.dirname(DB_PATH);
-        if (!fs.existsSync(dbDir))
-            fs.mkdirSync(dbDir, { recursive: true });
+        if (!fs.existsSync(DATA_DIR))
+            fs.mkdirSync(DATA_DIR, { recursive: true });
         this.SQL = await initSqlJs();
+        // Check if we need to download/update database
+        const hasLocalDb = fs.existsSync(DB_PATH) && fs.statSync(DB_PATH).size > 1000;
+        if (!hasLocalDb) {
+            // First run: copy from package or download
+            await this.downloadDatabase();
+        }
+        else {
+            // Check for updates in background (don't block startup)
+            this.checkForUpdate().catch(() => { });
+        }
         if (fs.existsSync(DB_PATH)) {
             const buffer = fs.readFileSync(DB_PATH);
             this.db = new this.SQL.Database(new Uint8Array(buffer));
@@ -21,6 +47,87 @@ export class DatabaseService {
             this.createTables();
             this.save();
         }
+    }
+    async downloadDatabase() {
+        // 1. Try to copy from package
+        try {
+            const pkgPath = require.resolve("@hayrem_/mcp-minecraft-forge/package.json");
+            const sourceDb = path.join(path.dirname(pkgPath), "data", "forge-docs.db");
+            if (fs.existsSync(sourceDb) && fs.statSync(sourceDb).size > 1000) {
+                fs.copyFileSync(sourceDb, DB_PATH);
+                console.error(`[forge-mcp] Database installed from package (${(fs.statSync(DB_PATH).size / 1024 / 1024).toFixed(1)} MB)`);
+                return;
+            }
+        }
+        catch { }
+        // 2. Try to download from GitHub release
+        try {
+            console.error("[forge-mcp] Downloading database from GitHub release...");
+            const releaseInfo = await this.fetchReleaseInfo();
+            const asset = releaseInfo.assets?.find((a) => a.name === "forge-docs.db");
+            if (asset) {
+                await this.downloadFile(asset.browser_download_url, DB_PATH);
+                console.error(`[forge-mcp] Database downloaded (${(fs.statSync(DB_PATH).size / 1024 / 1024).toFixed(1)} MB)`);
+                return;
+            }
+        }
+        catch (err) {
+            console.error("[forge-mcp] Download failed:", err instanceof Error ? err.message : String(err));
+        }
+        console.error("[forge-mcp] Warning: No database available. Run: npm run index-docs");
+    }
+    async checkForUpdate() {
+        try {
+            const releaseInfo = await this.fetchReleaseInfo();
+            const asset = releaseInfo.assets?.find((a) => a.name === "forge-docs.db");
+            if (!asset)
+                return;
+            const localSize = fs.statSync(DB_PATH).size;
+            const remoteSize = asset.size;
+            // If remote is significantly different (>100KB), update
+            if (Math.abs(remoteSize - localSize) > 100000) {
+                console.error(`[forge-mcp] Updating database (local: ${(localSize / 1024 / 1024).toFixed(1)} MB, remote: ${(remoteSize / 1024 / 1024).toFixed(1)} MB)`);
+                await this.downloadFile(asset.browser_download_url, DB_PATH);
+                console.error(`[forge-mcp] Database updated (${(fs.statSync(DB_PATH).size / 1024 / 1024).toFixed(1)} MB)`);
+            }
+        }
+        catch {
+            // Silently ignore update check failures
+        }
+    }
+    fetchReleaseInfo() {
+        return new Promise((resolve, reject) => {
+            https.get("https://api.github.com/repos/Hayremyt/mcp-minecraft-forge/releases/latest", { headers: { "User-Agent": "forge-mcp" } }, (res) => {
+                let data = "";
+                res.on("data", (chunk) => (data += chunk));
+                res.on("end", () => {
+                    try {
+                        resolve(JSON.parse(data));
+                    }
+                    catch (e) {
+                        reject(e);
+                    }
+                });
+            }).on("error", reject);
+        });
+    }
+    downloadFile(url, dest) {
+        return new Promise((resolve, reject) => {
+            const file = fs.createWriteStream(dest);
+            https.get(url, (response) => {
+                if (response.statusCode === 302 || response.statusCode === 301) {
+                    file.close();
+                    this.downloadFile(response.headers.location, dest).then(resolve).catch(reject);
+                    return;
+                }
+                if (response.statusCode !== 200) {
+                    reject(new Error(`HTTP ${response.statusCode}`));
+                    return;
+                }
+                response.pipe(file);
+                file.on("finish", () => { file.close(); resolve(); });
+            }).on("error", reject);
+        });
     }
     save() {
         if (!this.db)
@@ -53,7 +160,6 @@ export class DatabaseService {
         this.db.run(`CREATE VIRTUAL TABLE IF NOT EXISTS documents_fts USING fts5(title, content, content='documents', content_rowid='id');`);
         this.db.run(`CREATE INDEX IF NOT EXISTS idx_documents_version ON documents(minecraft_version);`);
         this.db.run(`CREATE INDEX IF NOT EXISTS idx_documents_category ON documents(category);`);
-        // Triggers to keep FTS5 in sync
         this.db.run(`CREATE TRIGGER IF NOT EXISTS documents_ai AFTER INSERT ON documents BEGIN
       INSERT INTO documents_fts(rowid, title, content) VALUES (new.id, new.title, new.content);
     END;`);

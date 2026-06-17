@@ -1,6 +1,6 @@
 {
   "name": "@hayrem_/mcp-minecraft-forge",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "MCP server for Forge Minecraft modding documentation with FTS5 search",
   "type": "module",
   "main": "dist/index.js",
@@ -19,14 +19,22 @@
     "index-docs": "npx tsx scripts/index-docs.ts",
     "postinstall": "node scripts/postinstall.js"
   },
-  "keywords": ["minecraft", "forge", "modding", "mcp", "documentation"],
+  "keywords": [
+    "minecraft",
+    "forge",
+    "modding",
+    "mcp",
+    "documentation"
+  ],
   "author": "Hayrem_",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://github.com/Hayremyt/mcp-minecraft-forge.git"
   },
-  "engines": { "node": ">=20.0.0" },
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
     "cheerio": "^1.2.0",

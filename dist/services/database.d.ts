@@ -21,6 +21,10 @@ export declare class DatabaseService {
     private SQL;
     private db;
     initialize(): Promise<void>;
+    private downloadDatabase;
+    private checkForUpdate;
+    private fetchReleaseInfo;
+    private downloadFile;
     private save;
     private createTables;
     searchDocs(query: string, category?: string, version?: string): Document[];
