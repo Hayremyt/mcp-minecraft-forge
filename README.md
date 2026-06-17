@@ -15,7 +15,7 @@ MCP server for Forge Minecraft modding documentation. Gives AI assistants direct
 
 - **731 documents** across 12 Forge versions (1.12.x - 1.21.x)
 - **4,536 searchable chunks** (titles, sections, code blocks)
-- **1,750 code examples** extracted
+- **1,750 code examples**
 - **Database size**: ~12 MB
 
 ## Installation
