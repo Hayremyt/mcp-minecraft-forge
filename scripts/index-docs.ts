@@ -14,17 +14,44 @@ const FORGE_VERSIONS = [
 ];
 
 async function fetchPage(url: string): Promise<string | null> {
-  const domains = [url, url.replace("mcforge.readthedocs.io", "docs.minecraftforge.net"), url.replace("docs.minecraftforge.net", "mcforge.readthedocs.io")];
+  const domains = [
+    url,
+    url.replace("mcforge.readthedocs.io", "docs.minecraftforge.net"),
+    url.replace("docs.minecraftforge.net", "mcforge.readthedocs.io")
+  ];
+  const userAgents = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",
+    "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
+    "curl/7.68.0"
+  ];
+  
   let attempt = 0;
   while (true) {
     attempt++;
     const domainUrl = domains[(attempt - 1) % domains.length];
+    const ua = userAgents[(attempt - 1) % userAgents.length];
+    
     try {
-      const response = await fetch(domainUrl, { headers: { "User-Agent": "Mozilla/5.0" }, signal: AbortSignal.timeout(10000) });
-      if (response.ok) { if (attempt > 1) console.log(`  OK attempt ${attempt}`); return await response.text(); }
-    } catch {}
-    console.log(`  Fail attempt ${attempt}, retry 1s`);
-    await new Promise(r => setTimeout(r, 1000));
+      const response = await fetch(domainUrl, { 
+        headers: { "User-Agent": ua, "Accept": "text/html,*/*" },
+        signal: AbortSignal.timeout(15000)
+      });
+      if (response.ok) {
+        if (attempt > 1) console.log(`  ✓ Success on attempt ${attempt}`);
+        return await response.text();
+      }
+      console.log(`  ✗ Attempt ${attempt}: HTTP ${response.status} (domain: ${new URL(domainUrl).host})`);
+    } catch (err) {
+      console.log(`  ✗ Attempt ${attempt}: ${err instanceof Error ? err.message : 'error'}`);
+    }
+    
+    // Exponential backoff: 1s, 2s, 4s, 8s, max 10s
+    const delay = Math.min(1000 * Math.pow(2, Math.floor(attempt / domains.length) - 1), 10000);
+    console.log(`  ⏳ Retrying in ${delay}ms...`);
+    await new Promise(r => setTimeout(r, delay));
   }
 }
 
