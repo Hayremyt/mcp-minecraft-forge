@@ -1,49 +1,27 @@
 {
   "name": "@hayrem_/mcp-minecraft-forge",
   "version": "0.1.1",
-  "description": "MCP server for Forge Minecraft modding documentation with weekly auto-indexing",
+  "description": "MCP server for Forge Minecraft modding documentation",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
     "mcp-minecraft-forge": "dist/index.js"
   },
-  "files": [
-    "dist",
-    "data/forge-docs.db",
-    "scripts/postinstall.js"
-  ],
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
     "index-docs": "npx tsx scripts/index-docs.ts",
-    "postinstall": "node scripts/postinstall.js",
-    "prepublishOnly": "npm run build"
+    "postinstall": "node scripts/postinstall.js"
   },
-  "keywords": [
-    "minecraft",
-    "forge",
-    "modding",
-    "mcp",
-    "documentation",
-    "ai",
-    "claude",
-    "cursor"
-  ],
+  "keywords": ["minecraft", "forge", "modding", "mcp", "documentation"],
   "author": "Hayrem_",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://github.com/Hayremyt/mcp-minecraft-forge.git"
   },
-  "bugs": {
-    "url": "https://github.com/Hayremyt/mcp-minecraft-forge/issues"
-  },
-  "homepage": "https://github.com/Hayremyt/mcp-minecraft-forge",
-  "engines": {
-    "node": ">=20.0.0"
-  },
+  "engines": { "node": ">=20.0.0" },
   "dependencies": {
-    "@hayrem_/mcp-minecraft-forge": "^0.1.1",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "better-sqlite3": "^12.11.1",
     "cheerio": "^1.2.0",
