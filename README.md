@@ -20,11 +20,7 @@ MCP server for Forge Minecraft modding documentation. Gives AI assistants direct
 
 ## Installation
 
-### From npm
 
-```bash
-npm install -g @hayrem_/mcp-minecraft-forge
-```
 
 ### From GitHub
 
