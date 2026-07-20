@@ -1,4 +1,4 @@
-﻿import * as cheerio from "cheerio";
+import * as cheerio from "cheerio";
 import crypto from "crypto";
 import fs from "fs";
 import path from "path";
@@ -30,15 +30,15 @@ async function fetchPage(url: string): Promise<string | null> {
     "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
     "curl/7.68.0"
   ];
-
+  
   let attempt = 0;
   while (true) {
     attempt++;
     const domainUrl = domains[(attempt - 1) % domains.length];
     const ua = userAgents[(attempt - 1) % userAgents.length];
-
+    
     try {
-      const response = await fetch(domainUrl, {
+      const response = await fetch(domainUrl, { 
         headers: { "User-Agent": ua, "Accept": "text/html,*/*" },
         signal: AbortSignal.timeout(15000)
       });
@@ -50,7 +50,7 @@ async function fetchPage(url: string): Promise<string | null> {
     } catch (err) {
       console.log(`  Fail attempt ${attempt}: ${err instanceof Error ? err.message : 'error'}`);
     }
-
+    
     const delay = Math.min(1000 * Math.pow(2, Math.floor(attempt / domains.length) - 1), 10000);
     await new Promise(r => setTimeout(r, delay));
   }
@@ -66,34 +66,91 @@ async function fetchSitemap(version: string): Promise<string[]> {
   return urls;
 }
 
-function categorize(url: string): string {
+function categorize(url: string, title: string, headings: string[], content: string): string {
+  // URL-based fallback
   const m = url.match(/en\/[\d.]+\/([^/]+)\//);
   const seg = m ? m[1] : "";
-  const map: Record<string, string> = { networking: "networking", blocks: "blocks", items: "items", blockentities: "blockentities", entities: "entities", rendering: "rendering", events: "events", concepts: "concepts", resources: "resources", datagen: "datagen", datastorage: "datastorage", gui: "gui", gameeffects: "gameeffects", gettingstarted: "gettingstarted", misc: "misc", advanced: "advanced", legacy: "legacy" };
-  return map[seg] || "general";
+  const map: Record<string, string> = { 
+    networking: "networking", blocks: "blocks", items: "items", 
+    blockentities: "blockentities", entities: "entities", 
+    rendering: "rendering", events: "events", concepts: "concepts", 
+    resources: "resources", datagen: "datagen", datastorage: "datastorage", 
+    gui: "gui", gameeffects: "gameeffects", gettingstarted: "gettingstarted", 
+    misc: "misc", advanced: "advanced", legacy: "legacy" 
+  };
+  const urlCat = map[seg] || "general";
+
+  // Heading-based keywords (specific phrases from h2/h3 headings)
+  const headingKeywords: Record<string, string[]> = {
+    blocks: ["block properties", "block states", "block model", "custom block", "block state", "block state properties", "block entity", "block entity renderer", "ber", "tile entity", "block state provider"],
+    items: ["item properties", "custom item", "item model", "item stack", "loot table", "item modifier"],
+    entities: ["entity ai", "goals", "pathfinding", "entity type", "spawn", "ai", "goal", "entity attribute", "entity classification"],
+    blockentities: ["block entity", "block entity renderer", "ber", "tile entity", "synced block entity", "block entity sync"],
+    rendering: ["rendering", "baked model", "item override", "render type", "vertex buffer", "model loader", "model extension", "model loading", "render types", "model extension"],
+    events: ["event bus", "subscrib", "forge event", "eventbus", "event priority", "event phase"],
+    networking: ["simpleimpl", "packet", "channel", "packetbuffer", "network event", "network channel"],
+    datagen: ["model provider", "loot table provider", "recipe provider", "tag provider", "datagen", "data generation"],
+    datastorage: ["capability", "attachment", "data storage", "world saved data", "persistent data", "codec", "data component", "data attachment"],
+    gui: ["screen", "menu", "container", "widget", "button", "text field", "hud", "overlay", "gui", "gui component"],
+    gameeffects: ["particle", "sound", "effect", "potion", "status effect", "particle options", "sound event"],
+    concepts: ["lifecycle", "registries", "registry", "registration", "sides", "client", "server", "common", "mod loading", "mod lifecycle", "data components"],
+    resources: ["resource pack", "resource location", "asset", "texture", "lang", "translation", "model json", "resource location"],
+    gettingstarted: ["getting started", "setup", "mod structure", "building", "gradle", "project structure", "first mod"],
+    misc: ["config", "debug profiler", "gametest", "update checker", "keymappings", "key mappings", "access transformers", "accesstransformers", "access transformer"],
+    advanced: ["advanced", "access transformers", "access transformer", "coremod", "mixin"],
+    legacy: ["legacy", "porting", "porting guide", "migration"],
+  };
+
+  // Special case for root URLs (e.g., https://docs.minecraftforge.net/en/1.21.x/)
+  if (url.match(/\/en\/[\d.]+\/$/)) return "gettingstarted";
+  
+  // Check title + headings + content for heading keywords
+  const allText = (title + " " + headings.join(" ") + " " + content.substring(0, 2000)).toLowerCase();
+  
+  for (const [cat, kws] of Object.entries(headingKeywords)) {
+    for (const kw of kws) {
+      if (allText.includes(kw.toLowerCase())) return cat;
+    }
+  }
+  
+  return urlCat;
 }
 
 function parsePage(html: string, url: string, version: string) {
   const $ = cheerio.load(html);
   $("script, style, nav, footer, header, .sidebar, .toc, .breadcrumb").remove();
   const title = $("h1").first().text().trim() || "Untitled";
-  const category = categorize(url);
-  const description = $("h1").next("p").text().trim() || "";
+  const headings: string[] = [];
   const sections: { heading: string; content: string; code: string[] }[] = [];
   const allCode: string[] = [];
   $("h2").each((_, el) => {
     const heading = $(el).text().trim();
     if (!heading || heading === "Navigation" || heading === "Version:") return;
+    headings.push(heading);
     let content = ""; const code: string[] = [];
     let next = $(el).next();
     while (next.length && next[0].tagName !== "h2") {
-      if (next.is("pre") || next.find("pre").length > 0) { next.find("pre code").each((_, ce) => { const c = $(ce).text().trim(); if (c.length > 10) { code.push(c); allCode.push(c); } }); }
-      const t = next.text().trim(); if (t && t.length > 20) content += t + "\n\n";
+      if (next.is("pre") || next.find("pre").length > 0) { 
+        next.find("pre code").each((_, ce) => { 
+          const c = $(ce).text().trim(); 
+          if (c.length > 10) { code.push(c); allCode.push(c); } 
+        }); 
+      }
+      const t = next.text().trim(); 
+      if (t && t.length > 20) content += t + "\n\n";
       next = next.next();
     }
     if (content.trim() || code.length > 0) sections.push({ heading, content: content.trim(), code });
   });
-  if (sections.length === 0) { let c = $("article, main, .content").text().trim(); if (!c || c.length < 100) c = $("body").text().trim(); if (c.length > 100) sections.push({ heading: "Overview", content: c.substring(0, 5000), code: allCode }); }
+  if (sections.length === 0) { 
+    let c = $("article, main, .content").text().trim(); 
+    if (!c || c.length < 100) c = $("body").text().trim(); 
+    if (c.length > 100) sections.push({ heading: "Overview", content: c.substring(0, 5000), code: allCode }); 
+  }
+
+  const allContent = [sections[0]?.content || "", ...sections.map(s => s.content)].join(" ");
+  const category = categorize(url, title, headings, allContent);
+  const description = $("h1").next("p").text().trim() || "";
   return { url, title, category, description, sections, codeBlocks: allCode };
 }
 
@@ -138,7 +195,6 @@ async function main() {
       if (!p || p.sections.length === 0) { console.log("  NO CONTENT"); vf++; totalFailed++; continue; }
       const content = [p.description, ...p.sections.map(s => `## ${s.heading}\n${s.content}`)].join("\n\n");
       const hash = crypto.createHash("sha256").update(content).digest("hex");
-
       db.run("INSERT OR REPLACE INTO documents (url, title, content, category, minecraft_version, hash) VALUES (?, ?, ?, ?, ?, ?)",
         [url, p.title, content.substring(0, 10000), p.category, version, hash]);
 
@@ -150,7 +206,7 @@ async function main() {
       if (p.description) db.run("INSERT OR REPLACE INTO chunks VALUES (?, ?, ?, ?, ?, ?, ?, ?)", [docId + "-d", docId, "description", p.description, "Description", null, 0, 0]);
       for (const s of p.sections) {
         if (s.content.trim()) { db.run("INSERT OR REPLACE INTO chunks VALUES (?, ?, ?, ?, ?, ?, ?, ?)", [docId + "-s" + totalSections, docId, "section", s.content.substring(0, 3000), s.heading, null, 0, 0]); totalSections++; }
-        for (const c of s.code) { const wc = c.split(/\s+/).length; db.run("INSERT OR REPLACE INTO chunks VALUES (?, ?, ?, ?, ?, ?, ?, ?)", [docId + "-c" + totalCode, docId, "code", c.substring(0, 3000), p.title + " - " + s.heading, "java", wc, 1]); totalCode++; }
+        for (const c of s.code) { db.run("INSERT OR REPLACE INTO chunks VALUES (?, ?, ?, ?, ?, ?, ?, ?)", [docId + "-c" + totalCode, docId, "code", c.substring(0, 3000), p.title + " - " + s.heading, "java", c.split(/\s+/).length, 1]); totalCode++; }
       }
       vd++; totalDocs++;
       console.log(`  OK: ${p.sections.length} sections, ${p.codeBlocks.length} code`);
@@ -159,7 +215,6 @@ async function main() {
     console.log(`${version}: ${vd} OK, ${vf} failed`);
   }
 
-  // Save database
   const data = db.export();
   fs.writeFileSync(DB_PATH, Buffer.from(data));
 
